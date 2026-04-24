@@ -349,6 +349,8 @@ app.get("/payments/:email", async (req, res) => {
 
   res.send(payments);
 });
+
+
 // Admin Related Api
 
 app.get("/users", async (req, res) => {
@@ -377,7 +379,7 @@ app.patch("/users/admin/:id", async (req, res) => {
   res.send(result);
 });
 
-
+// laybraiyan role update
 app.patch("/users/librarian/:id", async (req, res) => {
   const id = req.params.id;
 
@@ -393,6 +395,56 @@ app.patch("/users/librarian/:id", async (req, res) => {
   const result = await usersCollection.updateOne(
     { _id: new ObjectId(id) },
     { $set: { role: "librarian" } }
+  );
+
+  res.send(result);
+});
+
+
+
+// book deleted related api
+
+  // admin can show all books
+app.get("/admin/books", async (req, res) => {
+  const result = await booksCollection
+    .find({})
+    .sort({ createdAt: -1 })
+    .toArray();
+
+  res.send(result);
+});
+
+// DELETE BOOK + related orders (Admin)
+app.delete("/books/:id", async (req, res) => {
+  const id = req.params.id;
+
+  // delete book
+  const bookResult = await booksCollection.deleteOne({
+    _id: new ObjectId(id),
+  });
+
+  // delete related orders
+  const orderResult = await ordersCollection.deleteMany({
+    bookId: id,
+  });
+
+  res.send({
+    success: true,
+    message: "Book + related orders deleted",
+    bookDeleted: bookResult.deletedCount,
+    ordersDeleted: orderResult.deletedCount,
+  });
+});
+
+app.patch("/books/status/:id", async (req, res) => {
+  const id = req.params.id;
+  const { status } = req.body;
+
+  const result = await booksCollection.updateOne(
+    { _id: new ObjectId(id) },
+    {
+      $set: { status }
+    }
   );
 
   res.send(result);
