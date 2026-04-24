@@ -349,6 +349,55 @@ app.get("/payments/:email", async (req, res) => {
 
   res.send(payments);
 });
+// Admin Related Api
+
+app.get("/users", async (req, res) => {
+  const result = await usersCollection.find().toArray();
+  res.send(result);
+});
+
+// user er Admin update
+app.patch("/users/admin/:id", async (req, res) => {
+  const id = req.params.id;
+
+  const user = await usersCollection.findOne({ _id: new ObjectId(id) });
+
+ 
+  if (user.role === "librarian") {
+    return res.status(400).send({
+      message: "Librarian cannot be made Admin",
+    });
+  }
+
+  const result = await usersCollection.updateOne(
+    { _id: new ObjectId(id) },
+    { $set: { role: "admin" } }
+  );
+
+  res.send(result);
+});
+
+
+app.patch("/users/librarian/:id", async (req, res) => {
+  const id = req.params.id;
+
+  const user = await usersCollection.findOne({ _id: new ObjectId(id) });
+
+
+  if (user.role === "admin") {
+    return res.status(400).send({
+      message: "Admin cannot be made Librarian",
+    });
+  }
+
+  const result = await usersCollection.updateOne(
+    { _id: new ObjectId(id) },
+    { $set: { role: "librarian" } }
+  );
+
+  res.send(result);
+});
+
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } finally {
