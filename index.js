@@ -35,8 +35,113 @@ async function run() {
     const booksCollection = db.collection("books");
     const ordersCollection = db.collection("orders");
     const usersCollection = db.collection("users");
+    const paymentsCollection = db.collection("payments");
 
 
+
+
+    // laybariayn layout
+    // get book by email
+    app.get("/my-books", async (req, res) => {
+  const email = req.query.email;
+
+  const result = await booksCollection
+    .find({ librarianEmail: email })
+    .sort({ createdAt: -1 })
+    .toArray();
+
+  res.send(result);
+});
+
+
+// publish ke unpublish korte parbo
+app.patch("/books/unpublish/:id", async (req, res) => {
+  const id = req.params.id;
+
+  const result = await booksCollection.updateOne(
+    { _id: new ObjectId(id) },
+    {
+      $set: {
+        status: "unpublished",
+      },
+    }
+  );
+
+  res.send(result);
+});
+
+//upate full book
+app.put("/books/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+
+    const { title, image, price } = req.body;
+
+    const filter = { _id: new ObjectId(id) };
+
+    const updateDoc = {
+      $set: {
+        title,
+        image,
+        price,
+      },
+    };
+
+    const result = await booksCollection.updateOne(filter, updateDoc);
+
+    res.send(result);
+  } catch (error) {
+    console.error("Update error:", error);
+    res.status(500).send({ message: "Book update failed" });
+  }
+});
+
+
+// laybariyan oders dekhar api
+app.get("/librarian-orders", async (req, res) => {
+  const email = req.query.email;
+
+  const books = await booksCollection
+    .find({ librarianEmail: email })
+    .project({ _id: 1 })
+    .toArray();
+
+  const bookIds = books.map((b) => b._id.toString());
+
+  const result = await ordersCollection
+    .find({ bookId: { $in: bookIds } })
+    .sort({ createdAt: -1 })
+    .toArray();
+
+  res.send(result);
+});
+
+// laybariyan status change
+// UPDATE ORDER STATUS (librarian)
+app.patch("/orders/:id/status", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { status } = req.body;
+
+    const allowed = ["pending", "shipped", "delivered", "cancelled"];
+
+    if (!allowed.includes(status)) {
+      return res.status(400).send({ message: "Invalid status" });
+    }
+
+    const result = await ordersCollection.updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: { status },
+      }
+    );
+
+    res.send(result);
+  } catch (err) {
+    console.log(err);
+    res.status(500).send({ message: "Status update failed" });
+  }
+});
 
     // user related apis
 
@@ -137,14 +242,12 @@ app.get("/orders", async (req, res) => {
 app.post("/orders-payment-checkout-session", async (req, res) => {
   const paymentInfo = req.body;
 
-  const amount = parseInt(paymentInfo.cost) * 100;
-
   const session = await stripe.checkout.sessions.create({
     line_items: [
       {
         price_data: {
-          currency: "USD",
-          unit_amount: amount,
+          currency: "usd",
+          unit_amount: paymentInfo.cost * 100,
           product_data: {
             name: paymentInfo.bookTitle,
           },
@@ -153,40 +256,66 @@ app.post("/orders-payment-checkout-session", async (req, res) => {
       },
     ],
     mode: "payment",
+
     metadata: {
       orderId: paymentInfo.orderId,
       bookTitle: paymentInfo.bookTitle,
     },
+
     customer_email: paymentInfo.senderEmail,
-    
-    success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+
+    success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}&orderId=${paymentInfo.orderId}`,
     cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancel`,
   });
 
   res.send({ url: session.url });
 });
 
+
 app.post("/payment-success", async (req, res) => {
   try {
-    const { orderId } = req.body;
+    const { orderId, sessionId } = req.body;
 
-    const result = await ordersCollection.updateOne(
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+    const paymentId = session.payment_intent;
+
+   
+    const existingPayment = await paymentsCollection.findOne({ paymentId });
+
+    if (existingPayment) {
+      return res.send({ success: true, message: "Already saved" });
+    }
+
+    const paymentData = {
+      orderId,
+      paymentId,
+      amount: session.amount_total / 100,
+      bookTitle: session.metadata.bookTitle,
+      userEmail: session.customer_email,
+      createdAt: new Date(),
+    };
+
+    await paymentsCollection.insertOne(paymentData);
+
+    await ordersCollection.updateOne(
       { _id: new ObjectId(orderId) },
       {
         $set: {
           paymentStatus: "paid",
-          status: "processing", 
+          status: "processing",
+          paymentId,
         },
       }
     );
 
-    res.send(result);
-  } catch (error) {
-    console.log(error);
+    res.send({ success: true });
+
+  } catch (err) {
+    console.log(err);
     res.status(500).send({ message: "Payment update failed" });
   }
 });
-
 // payemnt cancel
 app.patch("/orders/cancel/:id", async (req, res) => {
   try {
@@ -209,6 +338,17 @@ app.patch("/orders/cancel/:id", async (req, res) => {
   }
 });
 
+// invoice
+app.get("/payments/:email", async (req, res) => {
+  const email = req.params.email;
+
+  const payments = await paymentsCollection
+    .find({ userEmail: email })
+    .sort({ createdAt: -1 })
+    .toArray();
+
+  res.send(payments);
+});
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } finally {
