@@ -268,7 +268,7 @@ app.get("/books", async (req, res) => {
 
   res.send(result);
 });
-// latest book get
+// latest book find api
 app.get("/books/latest", async (req, res) => {
   const result = await booksCollection
     .find({ status: "published" })
