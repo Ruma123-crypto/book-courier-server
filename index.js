@@ -278,7 +278,7 @@ app.get("/books/latest", async (req, res) => {
 
   res.send(result);
 });
-    // book post related apis
+    // book post related apis with veryfy
     app.post("/books",verifyToken,verifyRole(["admin", "librarian"]), async (req, res) => {
   const book = req.body;
   book.createdAt = new Date();
