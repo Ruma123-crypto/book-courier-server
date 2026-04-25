@@ -5,11 +5,40 @@ const cors = require('cors');
 const app = express()
 const port = process.env.PORT||3000
 const stripe = require('stripe')(process.env.STRIPE_SECRET);
+const admin = require("firebase-admin");
 
 app.use(express.json())
 app.use(cors())
 
+
+
+const serviceAccount = require("./book-courier-adminsdk.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+
+
+const verifyToken = async (req, res, next) => {
+  const token = req.headers.authorization;
+
+  if (!token) {
+    return res.status(401).send({ message: "Unauthorized access" });
+  }
+
+  try {
+    const idToken = token.split(" ")[1];
+    const decoded = await admin.auth().verifyIdToken(idToken);
+
+    req.decoded_email = decoded.email;
+    next();
+  } catch {
+    return res.status(401).send({ message: "Unauthorized access" });
+  }
+};
+
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.l7oz43b.mongodb.net/books?retryWrites=true&w=majority`;
+
 
 
 const client = new MongoClient(uri, {
@@ -36,9 +65,41 @@ async function run() {
     const ordersCollection = db.collection("orders");
     const usersCollection = db.collection("users");
     const paymentsCollection = db.collection("payments");
+    const wishlistCollection=db.collection("wishlist")
 
 
+  // admin relted middleware
+   const verifyAdmin = async (req, res, next) => {
+  const email = req.decoded_email;
 
+  const user = await usersCollection.findOne({ email });
+
+  if (!user || user.role !== "admin") {
+    return res.status(403).send({ message: "Forbidden access" });
+  }
+
+  next();
+};
+
+// laybariyan midlware
+const verifyRole = (roles) => async (req, res, next) => {
+  const email = req.decoded_email;
+
+  const user = await usersCollection.findOne({ email });
+
+  if (!user || !roles.includes(user.role)) {
+    return res.status(403).send({ message: "Forbidden access" });
+  }
+
+  next();
+};
+    // user midleware use by email and role
+    app.get('/users/:email/role', async (req, res) => {
+  const email = req.params.email;
+ const query={email}
+  const user = await usersCollection.findOne(query );
+  res.send({role:user?.role||'user'});
+});
 
     // laybariayn layout
     // get book by email
@@ -191,7 +252,7 @@ app.get("/books/latest", async (req, res) => {
   res.send(result);
 });
     // book post related apis
-    app.post("/books", async (req, res) => {
+    app.post("/books",verifyToken,verifyRole(["admin", "librarian"]), async (req, res) => {
   const book = req.body;
   book.createdAt = new Date();
   const result = await booksCollection.insertOne(book);
@@ -450,6 +511,34 @@ app.patch("/books/status/:id", async (req, res) => {
   res.send(result);
 });
 
+
+// wishlist related apis
+// post data
+app.post('/wishlist', async (req, res) => {
+  const data = req.body;
+
+  const exists = await wishlistCollection.findOne({
+    userEmail: data.userEmail,
+    bookId: data.bookId
+  });
+
+  if (exists) {
+    return res.send({ alreadyAdded: true });
+  }
+
+  const result = await wishlistCollection.insertOne(data);
+  res.send({ insertedId: result.insertedId });
+});
+// get wishlisht by email
+app.get('/wishlist/:email', async (req, res) => {
+  const email = req.params.email;
+
+  const result = await wishlistCollection
+    .find({ userEmail: email })
+    .toArray();
+
+  res.send(result);
+});
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } finally {
