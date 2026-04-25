@@ -235,9 +235,35 @@ app.patch("/orders/:id/status", async (req, res) => {
 
 // get books
 app.get("/books", async (req, res) => {
+  const { search = "", sort = "" } = req.query;
+
+  let query = { status: "published" };
+
+  if (search) {
+    query.title = { $regex: search, $options: "i" };
+  }
+
+  let sortOption = { createdAt: -1 };
+
+  if (sort === "asc") {
+    sortOption = { price: 1 };
+  } else if (sort === "desc") {
+    sortOption = { price: -1 };
+  }
+
   const result = await booksCollection
-    .find({ status: "published" })
-    .sort({ createdAt: -1 })
+    .aggregate([
+      { $match: query },
+
+      // 🔥 price ensure number
+      {
+        $addFields: {
+          price: { $toDouble: "$price" }
+        }
+      },
+
+      { $sort: sortOption }
+    ])
     .toArray();
 
   res.send(result);
