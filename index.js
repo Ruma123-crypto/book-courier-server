@@ -255,7 +255,7 @@ app.get("/books", async (req, res) => {
     .aggregate([
       { $match: query },
 
-      // 🔥 price ensure number
+      
       {
         $addFields: {
           price: { $toDouble: "$price" }
