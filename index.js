@@ -66,6 +66,7 @@ async function run() {
     const usersCollection = db.collection("users");
     const paymentsCollection = db.collection("payments");
     const wishlistCollection=db.collection("wishlist")
+    const reviewsCollection = db.collection("reviews");
 
 
   // admin relted middleware
@@ -535,6 +536,38 @@ app.get('/wishlist/:email', async (req, res) => {
 
   const result = await wishlistCollection
     .find({ userEmail: email })
+    .toArray();
+
+  res.send(result);
+});
+
+
+// rating relted api
+// check user ordered this book or not
+app.get("/orders/check", async (req, res) => {
+  const { email, bookId } = req.query;
+
+  const order = await ordersCollection.findOne({
+    userEmail: email,
+    bookId: bookId
+  });
+
+  res.send({ hasOrdered: !!order });
+});
+// post rating
+app.post("/reviews", async (req, res) => {
+  const review = req.body;
+  review.createdAt = new Date();
+
+  const result = await reviewsCollection.insertOne(review);
+  res.send(result);
+});
+
+// get reviews
+app.get("/reviews/:bookId", async (req, res) => {
+  const result = await reviewsCollection
+    .find({ bookId: req.params.bookId })
+    .sort({ createdAt: -1 })
     .toArray();
 
   res.send(result);
